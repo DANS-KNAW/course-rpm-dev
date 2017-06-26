@@ -121,22 +121,41 @@ The new version will accept `POST` requests from clients. The requests will cont
 form with questionnaire data and the service will simple parrot back the data for now.
  
 1. Add the following code snippet to `nl.knaw.dans.easy.tutorial.EasyTutorialServlet`:
-
-       post("/answers") {
-           contentType = "text/html"
-           val name = params("name")
-           val age = params("age")
-           val language = params("language")
-   
-           Ok(s"""
-             <html><head></head><body>
-             Hi $name ($age). So, you like $language.
-             </body></html>
-             """)
-       }
-
-2. Recompile (in IntelliJ) and test the code with `./run-service.sh` and then filling in the form
-   `questionnaire-localhost.html` in your browser and submitting it.
+   ```scala
+      get("/answers") {
+          contentType = "text/html"
+          val output = new StringBuilder
+      
+          if (params.get("name").isDefined) {
+            output.append(s"<p>Hi ${params("name")} (${params("age")}), so you like ${params("language")}.")
+          }
+      
+          output.append(
+            """
+              |<h1>Questionnaire</h1>
+              |<form action="/answers" method="POST">
+              |    Your name: <input name="name" type="text" size="30" /><br />
+              |    Your age: <input name="age" type="text" size="3" /><br />
+              |    Your favourite programming language: <input name="language" type="text" size="30" /><br />
+              |    <input type="submit" value="Submit" />
+              |</form>
+              |</body>
+              |</html>
+            """.stripMargin)
+          Ok(output)
+        }
+      
+        post("/answers") {
+          contentType = "text/html"
+          val name = params("name")
+          val age = params("age")
+          val language = params("language")
+      
+          redirect(s"/answers?name=$name&age=$age&language=$language")
+        }
+   ```
+2. Recompile (in IntelliJ) and test the code with `./run-service.sh` and then pointing your
+   browser to <a target="__blank" href="http://localhost:20000/answers">http://localhost:20000/answers</a>
 3. Rebuild the project with `mvn clean install`. This will also create a new RPM package.
 4. Before we can install this package on the server we must publish it in the local yum repository.
    To do this run `./rebuild-repo.sh`
@@ -158,7 +177,7 @@ form with questionnaire data and the service will simple parrot back the data fo
 
        sudo service easy-tutorial start
        
-9. Now test the service on the VM using `questionnaire-testvm.html`
+9. Now test the service on the VM using <a target="__blank" href="http://test.dans.knaw.nl/answers">http://test.dans.knaw.nl/answers</a>
 
 
 Zooming in
@@ -174,29 +193,82 @@ will create the database if it does not exist yet.
            <artifactId>sqlite-jdbc</artifactId>
        </dependency>
    
-2. Though strictly not necessary, we will also add `sqlite` as a required package to our RPM: in the
+2. To create the database from the RPM package we need the `sqlite3` program, which is provided by
+   the package `sqlite`. We will therefore add `sqlite` as a required package to our RPM: in the
    `pom.xml` go to the configuration of `rpm-maven-plugin` and add `<require>sqlite</require>` after
    the `jsvc` require.
-3.    
- 
- 
- 
+   
+   * *Question 10: why do we need `jsvc`, by the way?*
+3. Now add the following code to `nl.knaw.dans.easy.tutorial.EasyTutorialApp`, below the line with `val properties = ...`:
+   ```scala
+     val dbConnection: Connection = {
+       Class.forName("org.sqlite.JDBC")
+       DriverManager.getConnection(s"jdbc:sqlite:${properties.getString("database")}")
+     }
+   ```
+   This will load the SQLite JDBC driver and establish the connection. In a production system we would use
+   a connection pool, of course.
+4. Change the code in the servlet to include the following just above the `redirect` call in the `post` route:
+   ```scala
+    val update = app.dbConnection.prepareStatement("insert into answer values (?, ?, ?)")
+    update.setString(1, name)
+    update.setInt(2, age.toInt)
+    update.setString(3, language)
+    update.executeUpdate()
+   ```
+   
+   Also add the following to the `get` route, in the `if`-statement, just below the greeting:
+   ```scala
+         val query = app.dbConnection.prepareStatement("select * from answer")
+         val results = query.executeQuery()
+         output.append(
+           """
+             |<html><head></head><body><table>
+             |<th>Name</th><th>Age</th><th>Programming Language</th>
+           """.stripMargin)
+         while (results.next()) {
+           output.append(s"<tr><td>${ results.getString(1) }</td><td>${ results.getInt(2) }</td><td>${ results.getString(3) }</td></tr>\n")
+         }
+         output.append("</table>\n")
+   ```
 
+5. We are going to test locally first. Create the SQLite database from the terminal in your project
+   directory:
+   ```
+   sqlite3 data/test.db 'create table answer (name text, age int, language text);'
+  
+   ```
+6. Compile and run: `./run-service.sh` and browse to `http://localhost:20000/answers`
+7. Now before we can build the RPM and deploy on the test VM, we need to make sure that the RPM
+   creates the database. We can use the `post-install` RPM script for that. Edit the file at
+   `src/main/rpm/2-post-install.sh` and add the following variable definitions just below
+   `PHASE`:
+   ```bash
+    DATABASE_DIR=/var/opt/dans.knaw.nl/lib/$MODULE_NAME/
+    DATABASE=$DATABASE_DIR/answer.db
+   ```
+   Then add the following block of code after `service_create_log_directory`:
+   ```bash
+   if [ ! -f $DATABASE_DIR ]; then
+       log_start "Creating database..."
+       mkdir -p $DATABASE_DIR
+       sqlite3 $DATABASE 'create table answer (name text, age int, language text);'
+       chown -R $MODULE_NAME $DATABASE_DIR
+       log_ok
+   fi
+   ```
+8. Now we are going to rebuild the RPM: `./rebuild-all.sh`
+   
+   * *Question 11: what does this script do?*
+   * *Question 12: Take a look at the RPM-plugin configuration in `dans-parent/dans-prototype/pom.xml`.
+     Where is the `2-post-install.sh` script configured?*
+   * *Question 13: Take a look at the files that the `rpm-maven-plugin` generates for `rpm` in
+     `target/rpm/`. Can you find the place where the code we just added ends up?*
 
+9. Upgrade with yum and test. 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+To be continued ...
+-------------------
 
 
 References
@@ -204,5 +276,3 @@ References
 * RPM website: http://rpm.org/
 * Very useful, and extensive book about RPM: http://rpm5.org/docs/max-rpm.pdf
 * YUM man page: https://linux.die.net/man/8/yum
-* 
-
