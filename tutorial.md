@@ -64,9 +64,9 @@ We will first generate a fresh project.
 4. Hit Enter again when asked for confirmation about the parameters.
 
 A number of things will now happen in sequence:
-* The project is generated
+* The project is generated.
 * The `init-project.sh` script is run, which will do some things like:
-    - Fill in license headers
+    - Fill in license headers.
     - Build the project (including the RPM package).
     
 The project generation process is not the focus of the present tutorial, so if you want to know exactly 
@@ -79,12 +79,12 @@ Now that we have our new project, let's try it out.
 
 1. Or wait, first better let us store the initial version in a git repo. `cd easy-tutorial ; git init ; git add . ; git commit -m "Initial commit"`
 2. We could now start the project for debugging with one of the `run*.sh` scripts. However, we can now
-   also start a test VM, install the RPM that was just built and run the service exactly as it will be
-   in the eventual production environment. Let's do that:
+   also start a test VM, install the RPM that was just built and run the service exactly as in the eventual production environment. 
+   Let's do that:
    
         vagrant up
 
-   This will start the VM and trigger the Ansible provisioner to do some boilerplate configuration and install the
+   This will start the VM and trigger the provisioner to do some boilerplate configuration and install the
    RPM.
    * *Question 1: what provisioner does vagrant use?* 
    * *Question 2: what file is the playbook for this provisioner?* 
@@ -102,7 +102,7 @@ Now that we have our new project, let's try it out.
    * *Question 5: How is your request to tcp port 80 on the VM relayed to this port? 
       Where is this configured and how is this configuration applied to the VM?* 
 
-4. SSH in on the virtual machine: `vagrant ssh`
+4. SSH in on the virtual machine: `vagrant ssh`.
 5. List the installed RPM packages that start with "dans": `yum list installed dans*`(As you can see, you 
   can use [glob patterns] here.)	
 
@@ -167,15 +167,15 @@ form with questionnaire data and the service will simple parrot back the data fo
 5. SSH in on your VM with `vagrant ssh`.
 6. Check that yum is aware that there is an update for the module: 
 
-       yum check-update dans*
+         yum check-update dans*
     
 7. Upgrade the module:
 
-       sudo yum upgrade dans*
+         sudo yum upgrade dans*
 
 8. Start the upgraded service:
 
-       sudo service easy-tutorial start
+          sudo service easy-tutorial start
        
 9. Now test the service on the VM using <a target="__blank" href="http://test.dans.knaw.nl/answers">http://test.dans.knaw.nl/answers</a>
 
@@ -188,10 +188,10 @@ will create the database if it does not exist yet.
  
 1. We will first add the dependency to the SQLite JDBC driver to our pom:
  
-       <dependency>
-           <groupId>org.xerial</groupId>
-           <artifactId>sqlite-jdbc</artifactId>
-       </dependency>
+           <dependency>
+               <groupId>org.xerial</groupId>
+               <artifactId>sqlite-jdbc</artifactId>
+           </dependency>
    
 2. To create the database from the RPM package we need the `sqlite3` program, which is provided by
    the package `sqlite`. We will therefore add `sqlite` as a required package to our RPM: in the
@@ -199,12 +199,13 @@ will create the database if it does not exist yet.
    the `jsvc` require.
    
    * *Question 10: why do we need `jsvc`, by the way?*
-3. Now add the following code to `nl.knaw.dans.easy.tutorial.EasyTutorialApp`, below the line with `val properties = ...`:
+3. Now add the following code to `nl.knaw.dans.easy.tutorial.EasyTutorialApp`, below the line with `val properties = ...` :
+
    ```scala
-     val dbConnection: Connection = {
+    val dbConnection: Connection = {
        Class.forName("org.sqlite.JDBC")
        DriverManager.getConnection(s"jdbc:sqlite:${properties.getString("database")}")
-     }
+    }
    ```
    This will load the SQLite JDBC driver and establish the connection. In a production system we would use
    a connection pool, of course.
@@ -219,17 +220,17 @@ will create the database if it does not exist yet.
    
    Also add the following to the `get` route, in the `if`-statement, just below the greeting:
    ```scala
-         val query = app.dbConnection.prepareStatement("select * from answer")
-         val results = query.executeQuery()
-         output.append(
-           """
-             |<html><head></head><body><table>
-             |<th>Name</th><th>Age</th><th>Programming Language</th>
-           """.stripMargin)
-         while (results.next()) {
-           output.append(s"<tr><td>${ results.getString(1) }</td><td>${ results.getInt(2) }</td><td>${ results.getString(3) }</td></tr>\n")
-         }
-         output.append("</table>\n")
+     val query = app.dbConnection.prepareStatement("select * from answer")
+     val results = query.executeQuery()
+     output.append(
+       """
+         |<html><head></head><body><table>
+         |<th>Name</th><th>Age</th><th>Programming Language</th>
+       """.stripMargin)
+     while (results.next()) {
+       output.append(s"<tr><td>${ results.getString(1) }</td><td>${ results.getInt(2) }</td><td>${ results.getString(3) }</td></tr>\n")
+     }
+     output.append("</table>\n")
    ```
 
 5. We are going to test locally first. Create the SQLite database from the terminal in your project
@@ -238,26 +239,32 @@ will create the database if it does not exist yet.
    sqlite3 data/test.db 'create table answer (name text, age int, language text);'
   
    ```
-6. Compile and run: `./run-service.sh` and browse to `http://localhost:20000/answers`
-7. Now before we can build the RPM and deploy on the test VM, we need to make sure that the RPM
+6. The location of the database needs to be configured. Add the following to the file `home/cfg/application.properties`:
+    
+            database=data/test.db 
+    
+7. Compile and run: `./run-service.sh` and browse to `http://localhost:20000/answers`. 
+8. Now before we can build the RPM and deploy on the test VM, we need to make sure that the RPM
    creates the database. We can use the `post-install` RPM script for that. Edit the file at
    `src/main/rpm/2-post-install.sh` and add the following variable definitions just below
    `PHASE`:
+   
    ```bash
     DATABASE_DIR=/var/opt/dans.knaw.nl/lib/$MODULE_NAME/
     DATABASE=$DATABASE_DIR/answer.db
    ```
+   
    Then add the following block of code after `service_create_log_directory`:
    ```bash
    if [ ! -f $DATABASE_DIR ]; then
-       log_start "Creating database..."
+       log_action_start "Creating database..."
        mkdir -p $DATABASE_DIR
        sqlite3 $DATABASE 'create table answer (name text, age int, language text);'
        chown -R $MODULE_NAME $DATABASE_DIR
-       log_ok
+       log_action_ok
    fi
    ```
-8. Now we are going to rebuild the RPM: `./rebuild-all.sh`
+9. Now we are going to rebuild the RPM: `./rebuild-all.sh`
    
    * *Question 11: what does this script do?*
    * *Question 12: Take a look at the RPM-plugin configuration in `dans-parent/dans-prototype/pom.xml`.
@@ -265,7 +272,12 @@ will create the database if it does not exist yet.
    * *Question 13: Take a look at the files that the `rpm-maven-plugin` generates for `rpm` in
      `target/rpm/`. Can you find the place where the code we just added ends up?*
 
-9. Upgrade with yum and test. 
+10. Upgrade with yum.
+    
+   * *Question 14: can you see in the output of yum if the database is created? 
+
+11. Configure the database in `/etc/opt/dans.knaw.nl/easy-tutorial/application.properties`.
+12. Test.
 
 To be continued ...
 -------------------
